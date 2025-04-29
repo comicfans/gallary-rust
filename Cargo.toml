@@ -1,0 +1,12 @@
+[package]
+name = "gallary-rust"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+arrow-schema = "54.2.1"
+deltalake = { version = "0.25.0", features = ["datafusion"] }
+function_name = "0.3.0"
+tokio = "1.44.2"
+walkdir = "2"
+
