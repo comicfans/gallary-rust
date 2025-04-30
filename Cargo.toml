@@ -5,8 +5,29 @@ edition = "2024"
 
 [dependencies]
 arrow-schema = "54.2.1"
+arrow= "54.2.1"
+async-walkdir = "2.1.0"
+chrono = "0.4.39"
 deltalake = { version = "0.25.0", features = ["datafusion"] }
 function_name = "0.3.0"
-tokio = "1.44.2"
-walkdir = "2"
+futures-lite = "2.6.0"
+anyhow = "1.0.98"
+async-trait = "0.1.88"
 
+[dependencies.rusqlite]
+version = "0.35.0"
+features = ["bundled"]
+
+
+[dependencies.tokio]
+version = "1.44.2"
+features = [
+    "macros",
+    "process",
+    "rt",
+    "rt-multi-thread",
+    "signal",
+    "sync",
+    "fs",
+    "parking_lot",
+] 
