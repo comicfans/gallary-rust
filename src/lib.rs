@@ -1,13 +1,7 @@
-use deltalake::{DeltaTable, arrow::array::RecordBatch};
-use rusqlite::Connection;
-
 use anyhow::Result;
-use arrow::array::{Int32Array, StringArray};
-use arrow_schema::{DataType, Field, Schema};
 use async_walkdir::DirEntry;
 use async_walkdir::WalkDir;
 use chrono::TimeDelta;
-use deltalake::DeltaOps;
 use futures_lite::stream::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,9 +10,12 @@ use std::{
     vec,
 };
 
+mod delta;
+mod sqlite;
+
 use async_trait::async_trait;
 
-struct MyDirEntry {
+pub struct MyDirEntry {
     path: PathBuf,
 }
 
@@ -34,12 +31,9 @@ trait FsOpCallback {
     async fn flush(&mut self) -> Result<()>;
 }
 
-struct SaveToDelta {
-    queue: vec::Vec<MyDirEntry>,
-
-    table: DeltaTable,
-
-    schema: Schema,
+#[async_trait]
+trait LoadData {
+    async fn load(&mut self, callback: &mut dyn FsOpCallback) -> Result<()>;
 }
 
 async fn walk_files(root: &Path, callback: &mut dyn FsOpCallback) -> Result<()> {
@@ -56,121 +50,6 @@ async fn walk_files(root: &Path, callback: &mut dyn FsOpCallback) -> Result<()> 
     }
 
     callback.flush().await
-}
-use deltalake::kernel::{
-    Action, Add, Invariant, LogicalFile, Remove, StructType, Transaction, scalars::ScalarExt,
-};
-impl SaveToDelta {
-    async fn new(uri: &str) -> Result<Self> {
-        let schema = Schema::new(vec![Field::new("path", DataType::Utf8, false)]);
-
-        let table = match deltalake::DeltaTableBuilder::from_uri(uri).load().await {
-            Ok(table) => table,
-            Err(_) => {
-                let table = deltalake::DeltaTableBuilder::from_uri(uri).build()?;
-                let ops = DeltaOps(table);
-
-                let sch: StructType = (&schema).try_into()?;
-
-                ops.create()
-                    .with_columns(sch.fields().cloned())
-                    .await
-                    .expect("build ok")
-            }
-        };
-        //table.update().await?;
-
-        Ok(SaveToDelta {
-            queue: vec![],
-            schema,
-            table,
-        })
-    }
-}
-
-#[async_trait]
-impl FsOpCallback for SaveToDelta {
-    async fn on_op(&mut self, entry: MyDirEntry) -> Result<()> {
-        self.queue.push(entry);
-
-        if self.queue.len() > 1000 {
-            self.flush().await?
-        }
-
-        Ok(())
-
-        //tokio::runtime::Handle::current().
-    }
-    async fn flush(&mut self) -> Result<()> {
-        if self.queue.is_empty() {
-            return Ok(());
-        }
-
-        let vec: vec::Vec<String> = self
-            .queue
-            .iter()
-            .map(|entry| entry.path().to_string_lossy().into_owned())
-            .collect();
-
-        let string_array = StringArray::from(vec);
-
-        let batch =
-            RecordBatch::try_new(Arc::new(self.schema.clone()), vec![Arc::new(string_array)])
-                .unwrap();
-
-        match DeltaOps(self.table.clone()).write([batch]).await {
-            Ok(_) => {
-                self.queue.clear();
-                Ok(())
-            }
-            Err(e) => Err(e.into()),
-        }
-    }
-}
-
-struct SaveToSqlite {
-    conn: Connection,
-    queue: vec::Vec<MyDirEntry>,
-}
-
-impl SaveToSqlite {
-    fn new(path: PathBuf) -> Result<Self> {
-        let conn = Connection::open(path)?;
-        conn.execute("create table if not exists records(path)", ())
-            .expect("create ok");
-        conn.execute_batch("PRAGMA journal_mode=WAL;")
-            .expect("wal ok");
-        Ok(SaveToSqlite {
-            conn,
-            queue: vec![],
-        })
-    }
-}
-
-#[async_trait]
-impl FsOpCallback for SaveToSqlite {
-    async fn on_op(&mut self, entry: MyDirEntry) -> Result<()> {
-        self.queue.push(entry);
-
-        if self.queue.len() > 1000 {
-            self.flush().await?
-        }
-
-        Ok(())
-    }
-
-    async fn flush(&mut self) -> Result<()> {
-        self.conn.execute_batch("begin transaction")?;
-        for entry in self.queue.iter() {
-            self.conn.execute(
-                "insert into records(path) values (?1)",
-                (entry.path().to_string_lossy().to_string(),),
-            )?;
-        }
-        self.conn.execute_batch("commit;")?;
-        self.queue.clear();
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -253,30 +132,35 @@ mod tests {
             .expect("walk success");
     }
 
+    use delta::SaveToDelta;
+    use sqlite::SaveToSqlite;
     #[tokio::test]
+    #[named]
     async fn test_write_delta() {
-        let mut delta = SaveToDelta::new("deltalake".into()).await.expect("ok");
+        let mut delta = SaveToDelta::new(function_name!().into()).await.expect("ok");
         walk_files(Path::new(&get_walk_dir()), &mut delta)
             .await
             .expect("walk success");
     }
     #[tokio::test]
+    #[named]
     async fn test_sqlite_writes() {
         let mut save_to_sqlite =
-            SaveToSqlite::new(PathBuf::from("sqlite.db")).expect("sqlite create");
+            SaveToSqlite::new(PathBuf::from(function_name!())).expect("sqlite create");
         walk_files(Path::new(&get_walk_dir()), &mut save_to_sqlite)
             .await
             .expect("walk success");
     }
 
     fn rand_path_generator() -> RandomPathGenerator {
-        RandomPathGenerator::new(10, 50).expect("gen random")
+        RandomPathGenerator::new(7, 7).expect("gen random")
     }
 
     #[tokio::test]
+    #[named]
     async fn test_sqlite_benchmark() {
         let mut save_to_sqlite =
-            SaveToSqlite::new(PathBuf::from("benchmark.sqlite")).expect("sqlite create");
+            SaveToSqlite::new(PathBuf::from(function_name!())).expect("sqlite create");
 
         let mut generator = rand_path_generator();
 
@@ -289,10 +173,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[named]
     async fn test_deltalake_benchmark() {
-        let mut delta = SaveToDelta::new("benchmark.deltalake".into())
-            .await
-            .expect("ok");
+        let mut delta = SaveToDelta::new(function_name!().into()).await.expect("ok");
 
         let mut generator = rand_path_generator();
         while let Some(path) = generator.next() {

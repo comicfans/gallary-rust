@@ -13,6 +13,7 @@ function_name = "0.3.0"
 futures-lite = "2.6.0"
 anyhow = "1.0.98"
 async-trait = "0.1.88"
+polars = { version = "0.46.0", features = ["parquet"] }
 #duckdb = { version = "1.2.2", features = ["bundled"] }
 
 [dependencies.rusqlite]
@@ -37,6 +38,4 @@ features = [
 rstest = "0.25.0"
 random-string = "1.1.0"
 
-[target.x86_64-unknown-linux-gnu]
-linker = "/usr/bin/clang"
-rustflags = ["-C", "link-arg=--ld-path=/usr/bin/mold"]
+
