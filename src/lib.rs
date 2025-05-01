@@ -197,23 +197,9 @@ mod tests{
     use function_name::named;
 
 
-    //#[tokio::test]
-    //#[test]
-    #[named]
-    async fn test_speed(){
+    fn get_walk_dir()->String{
 
-        //    let mut dir = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
-        //    dir.push(function_name!());
-        //    if let Err(_) = std::fs::create_dir(&dir){
-        //        std::fs::remove_dir_all(&dir).expect("remove dir failed");
-        //        std::fs::create_dir(&dir).expect("create dir failed");
-        //    }
-
-        //    DeltaOps::try_from_uri(dir.to_str().unwrap().to_string()).await.expect("dir").create().with_table_name("default");
-
-        //    let mut delta = SaveToDelta::new("/home/comicfans/project/gallary-rust/here".into()).await.expect("create ok");
-        //    walk_files(Path::new("/home/comicfans/project/gallary-rust/"),&mut delta).await.expect("walk success");
-
+        std::env::var("WALK_DIR").unwrap_or_else(|_|env!("CARGO_MANIFEST_DIR").to_owned()+"/target".into())
     }
 
     #[async_trait]
@@ -228,51 +214,21 @@ mod tests{
     }
     #[tokio::test]
     async fn test_no_save(){
-        walk_files(Path::new("/home/comicfans/project/delta-rs/"), &mut ()).await.expect("walk success");
+        walk_files(Path::new(&get_walk_dir()), &mut ()).await.expect("walk success");
     }
 
     #[tokio::test]
     async fn test_write_delta(){
 
-        //DeltaOps::try_from_uri("/home/comicfans/project/gallary-rust/here").await.expect("open success").create().with_table_name("default").await.expect("table");
-        //let delta = SaveToDelta{
-        //    queue: vec![],
-        //    table: 
-        //};
-
-        //let batch=10000;
-        //let total = 240000;
-
-        //for i in 0..(total + batch - 1) / batch{
-
-        //    let mut vec = vec::Vec::new();
-        //    let mut svec = vec::Vec::new();
-        //    for v in i..(i+batch){
-        //        vec.push(v);
-        //        svec.push(v.to_string());
-        //    }
-
-
-
-        //    
-        //}
-
-        //DeltaOps(table.clone()).optimize().await.expect("compact");
-        //DeltaOps(table).vacuum().with_retention_period(TimeDelta::seconds(1)).await.expect("vacuum success");
-
-        let mut delta= SaveToDelta::new("/home/comicfans/project/gallary-rust/here".into()).await.expect("ok");
-
-        walk_files(Path::new("/home/comicfans/project/delta-rs/"),&mut delta).await.expect("walk success");
-
-
+        let mut delta= SaveToDelta::new("deltalake".into()).await.expect("ok");
+        walk_files(Path::new(&get_walk_dir()),&mut delta).await.expect("walk success");
     }
     #[tokio::test]
     async fn test_sqlite_writes(){
 
 
-        let mut save_to_sqlite = SaveToSqlite::new(PathBuf::from("/home/comicfans/project/gallary-rust/test.db")).expect("sqlite create");
-
-        walk_files(Path::new("/home/comicfans/project/delta-rs/"),&mut save_to_sqlite).await.expect("walk success");
+        let mut save_to_sqlite = SaveToSqlite::new(PathBuf::from("sqlite.db")).expect("sqlite create");
+        walk_files(Path::new(&get_walk_dir()),&mut save_to_sqlite).await.expect("walk success");
 
 
     }

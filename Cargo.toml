@@ -13,6 +13,7 @@ function_name = "0.3.0"
 futures-lite = "2.6.0"
 anyhow = "1.0.98"
 async-trait = "0.1.88"
+duckdb = { version = "1.2.2", features = ["bundled"] }
 
 [dependencies.rusqlite]
 version = "0.35.0"
@@ -31,3 +32,6 @@ features = [
     "fs",
     "parking_lot",
 ] 
+
+[dev-dependencies]
+rstest = "0.25.0"
