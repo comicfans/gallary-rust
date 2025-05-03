@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 arrow-schema = "54.2.1"
 arrow= "54.2.1"
-async-walkdir = "2.1.0"
 chrono = "0.4.39"
 deltalake = { version = "0.25.0", features = ["datafusion"] }
 function_name = "0.3.0"
@@ -16,6 +15,7 @@ async-trait = "0.1.88"
 polars-lazy = { version = "0.46.0", features = ["parquet"] }
 polars = "0.46.0"
 trait-variant = "0.1.2"
+walkdir = "2.5.0"
 #duckdb = { version = "1.2.2", features = ["bundled"] }
 
 [dependencies.rusqlite]

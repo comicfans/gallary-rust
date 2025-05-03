@@ -47,21 +47,18 @@ impl SaveToSqlite {
     }
 }
 
-unsafe impl Send for SaveToSqlite {}
-
-#[async_trait]
 impl FsOpCallback for SqliteWriter {
-    async fn on_op(&mut self, entry: MyDirEntry) -> Result<()> {
+    fn on_op(&mut self, entry: MyDirEntry) -> Result<()> {
         self.queue.push(entry);
 
         if self.queue.len() > 1000 {
-            self.flush().await?
+            self.flush()?
         }
 
         Ok(())
     }
 
-    async fn flush(&mut self) -> Result<()> {
+    fn flush(&mut self) -> Result<()> {
         self.conn.execute_batch("begin transaction")?;
         for entry in self.queue.iter() {
             self.conn.execute(
@@ -76,9 +73,8 @@ impl FsOpCallback for SqliteWriter {
     }
 }
 
-#[async_trait]
 impl LoadData for SqliteReader {
-    async fn load(&mut self, callback: &mut dyn FsOpCallback) -> Result<()> {
+    fn load(&mut self, callback: &mut dyn FsOpCallback) -> Result<()> {
         let mut stmt = self.conn.prepare("SELECT * from records")?;
         let person_iter = stmt.query_map([], |row| {
             let str: String = row.get(0)?;
@@ -88,7 +84,7 @@ impl LoadData for SqliteReader {
         })?;
 
         for entry in person_iter {
-            callback.on_op(entry?).await?;
+            callback.on_op(entry?)?;
         }
 
         Ok(())

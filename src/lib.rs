@@ -1,12 +1,10 @@
 use anyhow::Result;
-use async_walkdir::WalkDir;
 use futures_lite::stream::StreamExt;
 use std::path::{Path, PathBuf};
 
-//mod delta;
-//mod sqlite;
-
-use async_trait::async_trait;
+mod delta;
+mod sqlite;
+use walkdir::WalkDir;
 
 pub struct MyDirEntry {
     path: PathBuf,
@@ -29,23 +27,24 @@ trait LoadData {
     fn load(&mut self, callback: &mut dyn FsOpCallback) -> Result<()>;
 }
 
-async fn walk_files(root: &Path, callback: &mut dyn FsOpCallback) -> Result<()> {
-    let mut walker = WalkDir::new(root);
+fn walk_files(root: &Path, callback: &mut dyn FsOpCallback) -> Result<()> {
+    let walker = WalkDir::new(root);
 
-    loop {
-        match walker.next().await {
-            Some(Ok(entry)) => {
-                callback.on_op(MyDirEntry { path: entry.path() })?;
+    for entry in walker.into_iter(){
+        match entry{
+            Ok(entry) => {
+                callback.on_op(MyDirEntry { path: entry.path().to_owned() })?;
             }
-            Some(Err(_)) => break,
-            None => break,
+            Err(_) => break,
         }
     }
+
 
     callback.flush()
 }
 
 #[cfg(test)]
+
 mod tests {
 
     use super::*;
@@ -125,30 +124,27 @@ mod tests {
     //        Ok(())
     //    }
     //}
-    #[tokio::test]
-    async fn test_no_save() {
+    fn test_no_save() {
         walk_files(Path::new(&get_walk_dir()), &mut ())
-            .await
             .expect("walk success");
     }
 
-    use delta::SaveToDelta;
-    use sqlite::SaveToSqlite;
-    #[tokio::test]
+    use crate::delta::SaveToDelta;
+    use crate::sqlite::SaveToSqlite;
+
+    #[test]
     #[named]
-    async fn test_write_delta() {
-        let delta = SaveToDelta::new(function_name!().into()).await.expect("ok");
+    fn test_write_delta() {
+        let delta = SaveToDelta::new(function_name!().into()).expect("ok");
         walk_files(Path::new(&get_walk_dir()), delta.writer().as_mut())
-            .await
             .expect("walk success");
     }
-    #[tokio::test]
+    #[test]
     #[named]
-    async fn test_sqlite_writes() {
+    fn test_sqlite_writes() {
         let save_to_sqlite =
             SaveToSqlite::new(PathBuf::from(function_name!())).expect("sqlite create");
         walk_files(Path::new(&get_walk_dir()), &mut save_to_sqlite.writer())
-            .await
             .expect("walk success");
     }
 
@@ -156,7 +152,7 @@ mod tests {
         RandomPathGenerator::new(3, 100).expect("gen random")
     }
 
-    async fn writer_benchmark(callback: &mut dyn FsOpCallback) {
+    fn writer_benchmark(callback: &mut dyn FsOpCallback) {
         let mut generator = rand_path_generator();
 
         while let Some(path) = generator.next() {
@@ -166,12 +162,12 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[test]
     #[named]
-    async fn test_sqlite_benchmark() {
+    fn test_sqlite_benchmark() {
         let save_to_sqlite =
             SaveToSqlite::new(PathBuf::from(function_name!())).expect("sqlite create");
-        writer_benchmark(&mut save_to_sqlite.writer()).await;
+        writer_benchmark(&mut save_to_sqlite.writer());
     }
 
     //#[tokio::test]
@@ -181,36 +177,37 @@ mod tests {
     //    writer_benchmark(delta.writer().as_mut()).await;
     //}
 
-    async fn do_write(save: &mut impl FsOpCallback) {
+    fn do_write(save: &mut dyn FsOpCallback) {
         let mut generator = rand_path_generator();
         while let Some(path) = generator.next() {
             save.on_op(MyDirEntry { path: path.into() }).expect("ok");
         }
     }
 
-    async fn do_read_10(save: &mut dyn LoadData) {
+    fn do_read_10(save: &mut dyn LoadData) {
         let mut callback = ();
         for _ in 0..10 {
             save.load(&mut callback).expect("read ok");
         }
     }
 
-    #[tokio::test]
     #[named]
-    async fn test_multi_read_single_write() {
+    #[test]
+    fn test_multi_read_single_write() {
         let save_to_sqlite =
             SaveToSqlite::new(PathBuf::from(function_name!())).expect("sqlite create");
 
         let mut reader = save_to_sqlite.reader();
-        let write_task = tokio::spawn(async move {
-            let mut writer = save_to_sqlite.writer();
-            do_write(&mut writer).await;
+        let mut writer = save_to_sqlite.writer();
+        let write_task = std::thread::spawn(move || {
+            writer_benchmark(&mut writer);
         });
 
-        let read_task = tokio::spawn(async move {
-            do_read_10(&mut reader).await;
+        let read_task = std::thread::spawn(move || {
+            do_read_10(&mut reader);
         });
 
-        tokio::join!(write_task, read_task);
-    }
-}
+        write_task.join();
+        read_task.join();
+    }    }
+

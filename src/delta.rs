@@ -1,14 +1,13 @@
-use async_trait::async_trait;
 use deltalake::{
     kernel::{
-        Action, Add, Invariant, LogicalFile, Remove, StructType, Transaction, scalars::ScalarExt,
+        scalars::ScalarExt, Action, Add, Invariant, LogicalFile, Remove, StructType, Transaction,
     },
     operations::optimize::OptimizeType,
 };
 use polars_lazy::frame::{LazyFrame, ScanArgsParquet};
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use std::{
     path::{Path, PathBuf},
     vec,
@@ -19,17 +18,19 @@ use arrow_schema::{DataType, Field, Schema};
 
 use crate::{FsOpCallback, LoadData, MyDirEntry};
 use deltalake::DeltaOps;
-use deltalake::{DeltaTable, arrow::array::RecordBatch};
+use deltalake::{arrow::array::RecordBatch, DeltaTable};
 pub struct SaveToDelta {
     table: DeltaTable,
 
     schema: Schema,
 }
 impl SaveToDelta {
-    pub async fn new(uri: &str) -> Result<Self> {
+    pub fn new(uri: &str) -> Result<Self> {
         let schema = Schema::new(vec![Field::new("path", DataType::Utf8, false)]);
 
-        let table = match deltalake::DeltaTableBuilder::from_uri(uri).load().await {
+        let runtime = deltalake::storage::IORuntime::default().get_handle();
+        let jh = runtime.spawn(deltalake::DeltaTableBuilder::from_uri(uri).load());
+        let table: DeltaTable = match runtime.block_on(jh)? {
             Ok(table) => table,
             Err(_) => {
                 let table = deltalake::DeltaTableBuilder::from_uri(uri).build()?;
@@ -37,10 +38,13 @@ impl SaveToDelta {
 
                 let sch: StructType = (&schema).try_into()?;
 
-                ops.create()
-                    .with_columns(sch.fields().cloned())
-                    .await
-                    .expect("build ok")
+                let jh = runtime.spawn(
+                    ops.create()
+                        .with_columns(sch.fields().cloned())
+                        .into_future(),
+                );
+
+                runtime.block_on(jh)??
             }
         };
         //table.update().await?;
@@ -70,9 +74,8 @@ pub struct DeltaWriter {
     table: DeltaTable,
 }
 use polars::prelude::*;
-#[async_trait(?Send)]
 impl LoadData for DeltaReader {
-    async fn load(&mut self, callback: &mut dyn FsOpCallback) -> Result<()> {
+    fn load(&mut self, callback: &mut dyn FsOpCallback) -> Result<()> {
         //self.table.update().await.expect("update ok");
 
         let Ok(files) = self.table.get_file_uris() else {
@@ -89,31 +92,28 @@ impl LoadData for DeltaReader {
             let AnyValue::String(s) = row_content.0[0] else {
                 continue;
             };
-            callback
-                .on_op(MyDirEntry {
-                    path: PathBuf::from(s),
-                })
-                .await?;
+            callback.on_op(MyDirEntry {
+                path: PathBuf::from(s),
+            })?
         }
 
         Ok(())
     }
 }
 
-#[async_trait(?Send)]
 impl FsOpCallback for DeltaWriter {
-    async fn on_op(&mut self, entry: MyDirEntry) -> Result<()> {
+    fn on_op(&mut self, entry: MyDirEntry) -> Result<()> {
         self.queue.push(entry);
 
         if self.queue.len() > 1000 {
-            self.flush().await?
+            self.flush()?
         }
 
         Ok(())
 
         //tokio::runtime::Handle::current().
     }
-    async fn flush(&mut self) -> Result<()> {
+    fn flush(&mut self) -> Result<()> {
         if self.queue.is_empty() {
             return Ok(());
         }
@@ -130,7 +130,10 @@ impl FsOpCallback for DeltaWriter {
             RecordBatch::try_new(Arc::new(self.schema.clone()), vec![Arc::new(string_array)])
                 .unwrap();
 
-        DeltaOps(self.table.clone()).write([batch]).await?;
+        let runtime = deltalake::storage::IORuntime::default().get_handle();
+
+        //let join = runtime.spawn(
+        runtime.spawn(DeltaOps(self.table.clone()).write([batch]).into_future());
         //DeltaOps(self.table.clone()).optimize().with_type(OptimizeType::Compact).await?;
         self.queue.clear();
         Ok(())
