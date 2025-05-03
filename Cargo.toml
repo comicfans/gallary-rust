@@ -13,7 +13,8 @@ function_name = "0.3.0"
 futures-lite = "2.6.0"
 anyhow = "1.0.98"
 async-trait = "0.1.88"
-polars = { version = "0.46.0", features = ["parquet"] }
+polars-lazy = { version = "0.46.0", features = ["parquet"] }
+polars = "0.46.0"
 #duckdb = { version = "1.2.2", features = ["bundled"] }
 
 [dependencies.rusqlite]

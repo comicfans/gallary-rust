@@ -1,10 +1,6 @@
 use anyhow::Result;
-use async_walkdir::DirEntry;
 use async_walkdir::WalkDir;
-use chrono::TimeDelta;
 use futures_lite::stream::StreamExt;
-use std::sync::Arc;
-use std::time::Duration;
 use std::{
     path::{Path, PathBuf},
     vec,
@@ -25,15 +21,15 @@ impl MyDirEntry {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 trait FsOpCallback {
     async fn on_op(&mut self, path: MyDirEntry) -> Result<()>;
     async fn flush(&mut self) -> Result<()>;
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 trait LoadData {
-    async fn load(&mut self, callback: &mut dyn FsOpCallback) -> Result<()>;
+    async fn load(&self, callback: &mut dyn FsOpCallback) -> Result<()>;
 }
 
 async fn walk_files(root: &Path, callback: &mut dyn FsOpCallback) -> Result<()> {
@@ -115,13 +111,20 @@ mod tests {
             Some(ret)
         }
     }
-    #[async_trait]
+    #[async_trait(?Send)]
     impl FsOpCallback for () {
         async fn on_op(&mut self, _path: MyDirEntry) -> Result<()> {
             Ok(())
         }
 
         async fn flush(&mut self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl LoadData for () {
+        async fn load(&mut self, _: &mut dyn FsOpCallback) -> Result<()> {
             Ok(())
         }
     }
@@ -184,5 +187,30 @@ mod tests {
                 .await
                 .expect("ok");
         }
+    }
+
+    async fn do_write(save: &mut SaveToSqlite) {
+        let mut generator = rand_path_generator();
+        while let Some(path) = generator.next() {
+            save.on_op(MyDirEntry { path: path.into() })
+                .await
+                .expect("ok");
+        }
+    }
+
+    async fn do_read_10(save: &mut SaveToSqlite) {
+        let mut callback = ();
+        for _ in 0..10 {
+            save.load(&mut callback).await.expect("read ok");
+        }
+    }
+
+    #[tokio::test]
+    #[named]
+    async fn test_multi_read_single_write() {
+        let mut save_to_sqlite =
+            SaveToSqlite::new(PathBuf::from(function_name!())).expect("sqlite create");
+        let write_fut = do_write(&save_to_sqlite);
+        let read_fut = do_read_10(&save_to_sqlite);
     }
 }

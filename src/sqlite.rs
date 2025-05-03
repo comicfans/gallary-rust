@@ -13,6 +13,8 @@ pub struct SaveToSqlite {
     queue: vec::Vec<MyDirEntry>,
 }
 
+unsafe impl Send for SaveToSqlite {}
+
 impl SaveToSqlite {
     pub fn new(path: PathBuf) -> Result<Self> {
         let conn = Connection::open(path)?;
@@ -27,7 +29,7 @@ impl SaveToSqlite {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl FsOpCallback for SaveToSqlite {
     async fn on_op(&mut self, entry: MyDirEntry) -> Result<()> {
         self.queue.push(entry);
@@ -48,7 +50,27 @@ impl FsOpCallback for SaveToSqlite {
             )?;
         }
         self.conn.execute_batch("commit;")?;
+        //TODO: lose queue content or grow infinitely
         self.queue.clear();
+        Ok(())
+    }
+}
+
+#[async_trait(?Send)]
+impl LoadData for SaveToSqlite {
+    async fn load(&self, callback: &mut dyn FsOpCallback) -> Result<()> {
+        let mut stmt = self.conn.prepare("SELECT * from path")?;
+        let person_iter = stmt.query_map([], |row| {
+            let str: String = row.get(0)?;
+            Ok(MyDirEntry {
+                path: PathBuf::from(str),
+            })
+        })?;
+
+        for entry in person_iter {
+            callback.on_op(entry?).await?;
+        }
+
         Ok(())
     }
 }
