@@ -21,8 +21,6 @@ use crate::{FsOpCallback, LoadData, MyDirEntry};
 use deltalake::DeltaOps;
 use deltalake::{DeltaTable, arrow::array::RecordBatch};
 pub struct SaveToDelta {
-    queue: vec::Vec<MyDirEntry>,
-
     table: DeltaTable,
 
     schema: Schema,
@@ -47,18 +45,34 @@ impl SaveToDelta {
         };
         //table.update().await?;
 
-        Ok(SaveToDelta {
+        Ok(SaveToDelta { schema, table })
+    }
+    pub fn reader(&self) -> Box<dyn LoadData> {
+        Box::new(DeltaReader {
+            table: self.table.clone(),
+        })
+    }
+    pub fn writer(&self) -> Box<dyn FsOpCallback> {
+        Box::new(DeltaWriter {
+            table: self.table.clone(),
             queue: vec![],
-            schema,
-            table,
+            schema: self.schema.clone(),
         })
     }
 }
 
+pub struct DeltaReader {
+    table: DeltaTable,
+}
+pub struct DeltaWriter {
+    queue: vec::Vec<MyDirEntry>,
+    schema: Schema,
+    table: DeltaTable,
+}
 use polars::prelude::*;
 #[async_trait(?Send)]
-impl LoadData for SaveToDelta {
-    async fn load(&self, callback: &mut dyn FsOpCallback) -> Result<()> {
+impl LoadData for DeltaReader {
+    async fn load(&mut self, callback: &mut dyn FsOpCallback) -> Result<()> {
         //self.table.update().await.expect("update ok");
 
         let Ok(files) = self.table.get_file_uris() else {
@@ -87,7 +101,7 @@ impl LoadData for SaveToDelta {
 }
 
 #[async_trait(?Send)]
-impl FsOpCallback for SaveToDelta {
+impl FsOpCallback for DeltaWriter {
     async fn on_op(&mut self, entry: MyDirEntry) -> Result<()> {
         self.queue.push(entry);
 

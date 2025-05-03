@@ -15,6 +15,7 @@ anyhow = "1.0.98"
 async-trait = "0.1.88"
 polars-lazy = { version = "0.46.0", features = ["parquet"] }
 polars = "0.46.0"
+trait-variant = "0.1.2"
 #duckdb = { version = "1.2.2", features = ["bundled"] }
 
 [dependencies.rusqlite]
