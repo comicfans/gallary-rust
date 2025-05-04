@@ -199,7 +199,7 @@ mod tests {
     }
 
     fn rand_path_generator() -> RandomPathGenerator {
-        RandomPathGenerator::new(1, 1).expect("gen random")
+        RandomPathGenerator::new(3, 80).expect("gen random")
     }
 
     fn writer_benchmark(callback: &mut dyn FsOpCallback) {
