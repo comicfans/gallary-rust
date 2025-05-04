@@ -1,13 +1,13 @@
 use deltalake::{
     kernel::{
-        scalars::ScalarExt, Action, Add, Invariant, LogicalFile, Remove, StructType, Transaction,
+        Action, Add, Invariant, LogicalFile, Remove, StructType, Transaction, scalars::ScalarExt,
     },
     operations::optimize::OptimizeType,
 };
 use polars_lazy::frame::{LazyFrame, ScanArgsParquet};
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::{
     path::{Path, PathBuf},
     vec,
@@ -16,9 +16,9 @@ use std::{
 use arrow::array::{Int32Array, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 
-use crate::{FsOpCallback, LoadData, MyDirEntry};
+use crate::{FsOpCallback, LoadData, MyDirEntry, Store};
 use deltalake::DeltaOps;
-use deltalake::{arrow::array::RecordBatch, DeltaTable};
+use deltalake::{DeltaTable, arrow::array::RecordBatch};
 pub struct SaveToDelta {
     table: DeltaTable,
 
@@ -51,17 +51,21 @@ impl SaveToDelta {
 
         Ok(SaveToDelta { schema, table })
     }
-    pub fn reader(&self) -> Box<dyn LoadData> {
-        Box::new(DeltaReader {
+}
+
+impl Store for SaveToDelta {
+    fn reader(&self) -> impl LoadData {
+        DeltaReader {
             table: self.table.clone(),
-        })
+        }
     }
-    pub fn writer(&self) -> Box<dyn FsOpCallback> {
-        Box::new(DeltaWriter {
+
+    fn writer(&self) -> impl FsOpCallback {
+        DeltaWriter {
             table: self.table.clone(),
             queue: vec![],
             schema: self.schema.clone(),
-        })
+        }
     }
 }
 
@@ -85,8 +89,12 @@ impl LoadData for DeltaReader {
         let vec: Vec<PathBuf> = files.map(|x| PathBuf::from(x)).collect();
         let a = vec.into_boxed_slice();
 
-        let df = LazyFrame::scan_parquet_files(a.into(), ScanArgsParquet::default())?;
-        let a = df.collect()?;
+        let Ok(df) = LazyFrame::scan_parquet_files(a.into(), ScanArgsParquet::default()) else {
+            return Ok(());
+        };
+        let Ok(a) = df.collect() else {
+            return Ok(());
+        };
         for row in 0..a.height() {
             let row_content = a.get_row(row).expect("bad row");
             let AnyValue::String(s) = row_content.0[0] else {

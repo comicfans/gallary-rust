@@ -5,7 +5,7 @@ use std::{
     vec,
 };
 
-use crate::{LoadData, MyDirEntry};
+use crate::{LoadData, MyDirEntry, Store};
 use anyhow::Result;
 use rusqlite::Connection;
 pub struct SaveToSqlite {
@@ -21,7 +21,6 @@ pub struct SqliteWriter {
 pub struct SqliteReader {
     conn: Connection,
 }
-unsafe impl Send for SqliteReader {}
 
 impl SaveToSqlite {
     pub fn new(path: PathBuf) -> Result<Self> {
@@ -32,15 +31,16 @@ impl SaveToSqlite {
             .expect("wal ok");
         Ok(SaveToSqlite { conn, path })
     }
-
-    pub fn writer(self: &Self) -> SqliteWriter {
+}
+impl Store for SaveToSqlite {
+    fn writer(self: &Self) -> impl FsOpCallback {
         SqliteWriter {
             conn: Connection::open(self.path.clone()).expect("open"),
             queue: vec![],
         }
     }
 
-    pub fn reader(self: &Self) -> SqliteReader {
+    fn reader(self: &Self) -> impl LoadData {
         SqliteReader {
             conn: Connection::open(self.path.clone()).expect("open"),
         }
