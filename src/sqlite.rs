@@ -34,10 +34,16 @@ impl SaveToSqlite {
 }
 impl Store for SaveToSqlite {
     fn writer(self: &Self) -> impl FsOpCallback {
-        SqliteWriter {
+        let ret = SqliteWriter {
             conn: Connection::open(self.path.clone()).expect("open"),
             queue: vec![],
-        }
+        };
+
+        ret.conn
+            .execute_batch("PRAGMA journal_mode=WAL;")
+            .expect("wal ok");
+
+        ret
     }
 
     fn reader(self: &Self) -> impl LoadData {
@@ -61,12 +67,14 @@ impl FsOpCallback for SqliteWriter {
     fn flush(&mut self) -> Result<()> {
         self.conn.execute_batch("begin transaction")?;
         for entry in self.queue.iter() {
-            self.conn.execute(
-                "insert into records(path) values (?1)",
-                (entry.path().to_string_lossy().to_string(),),
-            )?;
+            self.conn
+                .execute(
+                    "insert into records(path) values (?1)",
+                    (entry.path().to_string_lossy().to_string(),),
+                )
+                .expect("insert ok");
         }
-        self.conn.execute_batch("commit;")?;
+        self.conn.execute_batch("commit;").expect("commit ok");
         //TODO: lose queue content or grow infinitely
         self.queue.clear();
         Ok(())

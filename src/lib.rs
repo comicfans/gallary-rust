@@ -172,6 +172,12 @@ mod tests {
     }
     #[test]
     #[named]
+    fn test_deltalake_write_read_compare() {
+        let deltalake = SaveToDelta::new(function_name!()).expect("ok");
+        test_write_read_compare(deltalake);
+    }
+    #[test]
+    #[named]
     fn test_sqlite_write_read_compare() {
         let sqlite_store =
             SaveToSqlite::new(PathBuf::from(function_name!())).expect("sqlite create");
@@ -181,13 +187,13 @@ mod tests {
     #[test]
     #[named]
     fn test_write_delta() {
-        let mut delta = SaveToDelta::new(function_name!().into()).expect("ok");
+        let delta = SaveToDelta::new(function_name!().into()).expect("ok");
         walk_files(Path::new(&get_walk_dir()), &mut delta.writer()).expect("walk success");
     }
     #[test]
     #[named]
     fn test_sqlite_writes() {
-        let mut save_to_sqlite =
+        let save_to_sqlite =
             SaveToSqlite::new(PathBuf::from(function_name!())).expect("sqlite create");
         walk_files(Path::new(&get_walk_dir()), &mut save_to_sqlite.writer()).expect("walk success");
     }
@@ -202,12 +208,13 @@ mod tests {
                 .on_op(MyDirEntry { path: path.into() })
                 .expect("ok");
         }
+        callback.flush().expect("flush ok");
     }
 
     #[test]
     #[named]
     fn test_sqlite_benchmark() {
-        let mut save_to_sqlite =
+        let save_to_sqlite =
             SaveToSqlite::new(PathBuf::from(function_name!())).expect("sqlite create");
         writer_benchmark(&mut save_to_sqlite.writer());
     }

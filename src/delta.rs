@@ -80,7 +80,8 @@ pub struct DeltaWriter {
 use polars::prelude::*;
 impl LoadData for DeltaReader {
     fn load(&mut self, callback: &mut dyn FsOpCallback) -> Result<()> {
-        //self.table.update().await.expect("update ok");
+        let runtime = deltalake::storage::IORuntime::default().get_handle();
+        runtime.block_on(self.table.update()).expect("update ok");
 
         let Ok(files) = self.table.get_file_uris() else {
             return Ok(());
@@ -118,8 +119,6 @@ impl FsOpCallback for DeltaWriter {
         }
 
         Ok(())
-
-        //tokio::runtime::Handle::current().
     }
     fn flush(&mut self) -> Result<()> {
         if self.queue.is_empty() {
@@ -140,9 +139,7 @@ impl FsOpCallback for DeltaWriter {
 
         let runtime = deltalake::storage::IORuntime::default().get_handle();
 
-        //let join = runtime.spawn(
-        runtime.spawn(DeltaOps(self.table.clone()).write([batch]).into_future());
-        //DeltaOps(self.table.clone()).optimize().with_type(OptimizeType::Compact).await?;
+        runtime.block_on(DeltaOps(self.table.clone()).write([batch]).into_future())?;
         self.queue.clear();
         Ok(())
     }
