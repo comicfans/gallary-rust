@@ -1,58 +1,17 @@
-use anyhow::Result;
-use std::path::{Path, PathBuf};
-
-mod delta;
-mod sqlite;
-use walkdir::WalkDir;
-
-pub struct MyDirEntry {
-    path: PathBuf,
-}
-
-impl MyDirEntry {
-    fn path(self: &Self) -> PathBuf {
-        self.path.clone()
-    }
-}
-
-trait FsOpCallback: Send {
-    fn on_op(&mut self, path: MyDirEntry) -> Result<()>;
-    fn flush(&mut self) -> Result<()>;
-}
-
-trait LoadData: Send {
-    fn load(&mut self, callback: &mut dyn FsOpCallback) -> Result<()>;
-}
-
-trait Store {
-    fn reader(&self) -> impl LoadData;
-    fn writer(&self) -> impl FsOpCallback;
-}
-
-fn walk_files(root: &Path, callback: &mut dyn FsOpCallback) -> Result<()> {
-    let walker = WalkDir::new(root);
-
-    for entry in walker.into_iter() {
-        match entry {
-            Ok(entry) => {
-                callback.on_op(MyDirEntry {
-                    path: entry.path().to_owned(),
-                })?;
-            }
-            Err(_) => break,
-        }
-    }
-
-    callback.flush()
-}
+pub mod common;
+pub mod delta;
+pub mod http;
+pub mod sqlite;
 
 #[cfg(test)]
-
 mod tests {
-
     use super::*;
+    use crate::common::{FsOpCallback, MyDirEntry, OrderBy, Store, StoreReader, walk_files};
+
+    use anyhow::Result;
     use function_name::named;
     use rand::RngCore;
+    use std::path::{Path, PathBuf};
     use std::vec::Vec;
 
     fn get_walk_dir() -> String {
@@ -126,7 +85,6 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
     impl FsOpCallback for () {
         fn on_op(&mut self, _path: MyDirEntry) -> Result<()> {
             Ok(())
@@ -165,7 +123,9 @@ mod tests {
         let mut checker = Checker {
             result: Counter::<String>::new(),
         };
-        reader.load(&mut checker).expect("read ok");
+        reader
+            .load(OrderBy::FsModifyTime, 0, &mut checker)
+            .expect("read ok");
         let expect = rand_path_generator().into_iter().collect::<Counter<_>>();
 
         assert_eq!(checker.result, expect);
@@ -226,10 +186,11 @@ mod tests {
         writer_benchmark(&mut delta.writer());
     }
 
-    fn do_read_10(save: &mut dyn LoadData) {
+    fn do_read_10(save: &mut dyn StoreReader) {
         let mut callback = ();
         for _ in 0..10 {
-            save.load(&mut callback).expect("read ok");
+            save.load(OrderBy::FsCreateTime, 0, &mut callback)
+                .expect("read ok");
         }
     }
 

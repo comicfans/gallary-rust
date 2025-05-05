@@ -1,10 +1,10 @@
-use crate::FsOpCallback;
+use crate::common::FsOpCallback;
 use std::{
     path::{Path, PathBuf},
     vec,
 };
 
-use crate::{LoadData, MyDirEntry, Store};
+use crate::common::{MyDirEntry, Store, StoreReader};
 use anyhow::Result;
 use rusqlite::Connection;
 pub struct SaveToSqlite {
@@ -45,7 +45,7 @@ impl Store for SaveToSqlite {
         ret
     }
 
-    fn reader(self: &Self) -> impl LoadData {
+    fn reader(self: &Self) -> impl StoreReader {
         SqliteReader {
             conn: Connection::open(self.path.clone()).expect("open"),
         }
@@ -80,9 +80,17 @@ impl FsOpCallback for SqliteWriter {
     }
 }
 
-impl LoadData for SqliteReader {
-    fn load(&mut self, callback: &mut dyn FsOpCallback) -> Result<()> {
-        let mut stmt = self.conn.prepare("SELECT * from records")?;
+use crate::common::OrderBy;
+impl StoreReader for SqliteReader {
+    fn load(
+        &mut self,
+        order_by: OrderBy,
+        limit: usize,
+        callback: &mut dyn FsOpCallback,
+    ) -> Result<()> {
+        let mut stmt = self
+            .conn
+            .prepare(&("SELECT * from records limit ".to_owned() + &limit.to_string()))?;
         let person_iter = stmt.query_map([], |row| {
             let str: String = row.get(0)?;
             Ok(MyDirEntry {

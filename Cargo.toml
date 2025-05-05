@@ -13,6 +13,8 @@ polars-lazy = { version = "0.46.0", features = ["parquet"] }
 polars = "0.46.0"
 walkdir = "2.5.0"
 rocket = "0.5.1"
+strum = "0.27.1"
+strum_macros = "0.27.1"
 #duckdb = { version = "1.2.2", features = ["bundled"] }
 
 [dependencies.rusqlite]

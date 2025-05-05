@@ -16,7 +16,7 @@ use std::{
 use arrow::array::{Int32Array, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 
-use crate::{FsOpCallback, LoadData, MyDirEntry, Store};
+use crate::common::{FsOpCallback, MyDirEntry, OrderBy, Store, StoreReader};
 use deltalake::DeltaOps;
 use deltalake::{DeltaTable, arrow::array::RecordBatch};
 pub struct SaveToDelta {
@@ -54,7 +54,7 @@ impl SaveToDelta {
 }
 
 impl Store for SaveToDelta {
-    fn reader(&self) -> impl LoadData {
+    fn reader(&self) -> impl StoreReader {
         DeltaReader {
             table: self.table.clone(),
         }
@@ -78,8 +78,13 @@ pub struct DeltaWriter {
     table: DeltaTable,
 }
 use polars::prelude::*;
-impl LoadData for DeltaReader {
-    fn load(&mut self, callback: &mut dyn FsOpCallback) -> Result<()> {
+impl StoreReader for DeltaReader {
+    fn load(
+        &mut self,
+        orderr_by: OrderBy,
+        limit: usize,
+        callback: &mut dyn FsOpCallback,
+    ) -> Result<()> {
         let runtime = deltalake::storage::IORuntime::default().get_handle();
         runtime.block_on(self.table.update()).expect("update ok");
 
