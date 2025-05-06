@@ -78,40 +78,72 @@ pub struct DeltaWriter {
     table: DeltaTable,
 }
 use polars::prelude::*;
+
+pub struct DeltaResult {
+    dataframe: DataFrame,
+    row: usize,
+    error_count: usize,
+}
+
+impl Iterator for DeltaResult {
+    type Item = MyDirEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.row >= self.dataframe.height() {
+            return None;
+        }
+
+        while self.error_count < 10 {
+            match self.dataframe.get_row(self.row) {
+                Ok(row_content) => {
+                    if let AnyValue::String(s) = row_content.0[0] {
+                        return Some(MyDirEntry {
+                            path: PathBuf::from(s),
+                        });
+                    }
+                }
+                _ => {}
+            }
+            self.error_count += 1;
+        }
+        None
+    }
+}
+
 impl StoreReader for DeltaReader {
     fn load(
         &mut self,
         orderr_by: OrderBy,
         limit: usize,
-        callback: &mut dyn FsOpCallback,
-    ) -> Result<()> {
+    ) -> Result<impl Iterator<Item = MyDirEntry>> {
         let runtime = deltalake::storage::IORuntime::default().get_handle();
         runtime.block_on(self.table.update()).expect("update ok");
 
+        let empty = DeltaResult {
+            dataframe: DataFrame::default(),
+            row: 0,
+            error_count: 0,
+        };
+
         let Ok(files) = self.table.get_file_uris() else {
-            return Ok(());
+            return Ok(empty);
         };
 
         let vec: Vec<PathBuf> = files.map(|x| PathBuf::from(x)).collect();
         let a = vec.into_boxed_slice();
 
         let Ok(df) = LazyFrame::scan_parquet_files(a.into(), ScanArgsParquet::default()) else {
-            return Ok(());
+            return Ok(empty);
         };
-        let Ok(a) = df.collect() else {
-            return Ok(());
+        let Ok(dataframe) = df.collect() else {
+            return Ok(empty);
         };
-        for row in 0..a.height() {
-            let row_content = a.get_row(row).expect("bad row");
-            let AnyValue::String(s) = row_content.0[0] else {
-                continue;
-            };
-            callback.on_op(MyDirEntry {
-                path: PathBuf::from(s),
-            })?
-        }
 
-        Ok(())
+        Ok(DeltaResult {
+            dataframe,
+            row: 0,
+            error_count: 0,
+        })
     }
 }
 

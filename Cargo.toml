@@ -15,6 +15,8 @@ walkdir = "2.5.0"
 rocket = "0.5.1"
 strum = "0.27.1"
 strum_macros = "0.27.1"
+ouroboros = "0.18.5"
+self_cell = "1.2.0"
 #duckdb = { version = "1.2.2", features = ["bundled"] }
 
 [dependencies.rusqlite]

@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::{path::PathBuf, sync::Arc};
 
 #[macro_use]
@@ -10,8 +11,8 @@ pub struct ServerConfig {
     pub store_path: Arc<PathBuf>,
 }
 
-use crate::common::OrderBy;
-use crate::sqlite::SaveToSqlite;
+use crate::common::{FsOpCallback, MyDirEntry, OrderBy, StoreReader};
+use crate::sqlite::{SaveToSqlite, SqliteReader};
 
 impl ServerConfig {
     pub fn new(path: PathBuf) -> anyhow::Result<Self> {
@@ -31,16 +32,40 @@ impl<'r> FromParam<'r> for OrderBy {
     }
 }
 
+use tokio::sync::mpsc;
+struct Queue {
+    receiver: mpsc::UnboundedReceiver<MyDirEntry>,
+    sender: mpsc::UnboundedSender<MyDirEntry>,
+}
+
+impl FsOpCallback for Queue {
+    fn on_op(&mut self, entry: MyDirEntry) -> anyhow::Result<()> {
+        self.sender
+            .send(entry)
+            .map_err(|_| anyhow::anyhow!("send error"))
+    }
+
+    fn flush(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
 #[get("/<order_by>/<limit>")]
 //#[get("/<limit>")]
-pub fn list(
+pub async fn list(
     server_config: &State<ServerConfig>,
     order_by: OrderBy,
     limit: usize,
 ) -> TextStream![String] {
-    //return "abc".to_owned();
+    let mut read = SqliteReader::new(server_config.store_path.to_path_buf()).expect("ok");
     TextStream! {
-        yield "abc".to_owned();
-        yield "bbc".to_owned();
+
+        let res = read.load(order_by, limit).expect("ok");
+
+        for v in res {
+            let v : String = v.path.to_str().unwrap().to_owned();
+            yield v;
+            yield "\n".to_owned();
+        }
     }
 }

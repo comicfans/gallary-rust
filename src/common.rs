@@ -27,12 +27,8 @@ pub enum OrderBy {
 }
 
 pub trait StoreReader: Send {
-    fn load(
-        &mut self,
-        order_by: OrderBy,
-        limit: usize,
-        callback: &mut dyn FsOpCallback,
-    ) -> Result<()>;
+    fn load(&mut self, order_by: OrderBy, limit: usize)
+    -> Result<impl Iterator<Item = MyDirEntry>>;
 }
 
 pub trait Store {
