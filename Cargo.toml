@@ -4,24 +4,33 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-arrow-schema = "54.2.1"
-arrow= "54.2.1"
+arrow-schema = {version = "54.2.1", optional = true}
+arrow= {version = "54.2.1", optional = true}
 chrono = "0.4.39"
-deltalake = { version = "0.25.0", features = ["datafusion"] }
+deltalake = { version = "0.25.0", features = ["datafusion"] , optional = true}
 anyhow = "1.0.98"
-polars-lazy = { version = "0.46.0", features = ["parquet"] }
-polars = "0.46.0"
+polars-lazy = { version = "0.46.0", features = ["parquet"] ,optional = true}
+polars = {version = "0.46.0", optional = true}
 walkdir = "2.5.0"
 rocket = "0.5.1"
 strum = "0.27.1"
 strum_macros = "0.27.1"
-ouroboros = "0.18.5"
-self_cell = "1.2.0"
+ouroboros = {version = "0.18.5", optional = true}
+serde_json = "1.0.140"
+serde = "1.0.219"
+jiff = {version = "0.2.13", features = ["serde"] }
 #duckdb = { version = "1.2.2", features = ["bundled"] }
+
+[features]
+delta = ["dep:arrow","dep:arrow-schema","dep:deltalake","dep:polars","dep:polars-lazy"]
+default = ["sqlite"]
+sqlite = ["dep:rusqlite","dep:ouroboros"]
+limbo = []
 
 [dependencies.rusqlite]
 version = "0.35.0"
 features = ["bundled"]
+optional = true
 
 
 [dependencies.tokio]

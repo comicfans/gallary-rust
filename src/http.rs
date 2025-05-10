@@ -1,7 +1,5 @@
-use std::rc::Rc;
 use std::{path::PathBuf, sync::Arc};
 
-#[macro_use]
 use rocket::response::stream::TextStream;
 use rocket::{State, get, request::FromParam};
 
@@ -11,7 +9,7 @@ pub struct ServerConfig {
     pub store_path: Arc<PathBuf>,
 }
 
-use crate::common::{FsOpCallback, MyDirEntry, OrderBy, StoreReader};
+use crate::common::{BasicPicture, OrderBy, StoreReader};
 use crate::sqlite::{SaveToSqlite, SqliteReader};
 
 impl ServerConfig {
@@ -32,24 +30,6 @@ impl<'r> FromParam<'r> for OrderBy {
     }
 }
 
-use tokio::sync::mpsc;
-struct Queue {
-    receiver: mpsc::UnboundedReceiver<MyDirEntry>,
-    sender: mpsc::UnboundedSender<MyDirEntry>,
-}
-
-impl FsOpCallback for Queue {
-    fn on_op(&mut self, entry: MyDirEntry) -> anyhow::Result<()> {
-        self.sender
-            .send(entry)
-            .map_err(|_| anyhow::anyhow!("send error"))
-    }
-
-    fn flush(&mut self) -> anyhow::Result<()> {
-        Ok(())
-    }
-}
-
 #[get("/<order_by>/<limit>")]
 //#[get("/<limit>")]
 pub async fn list(
@@ -60,12 +40,21 @@ pub async fn list(
     let mut read = SqliteReader::new(server_config.store_path.to_path_buf()).expect("ok");
     TextStream! {
 
+        yield "[\n".to_owned();
         let res = read.load(order_by, limit).expect("ok");
 
+        let mut first = true;
         for v in res {
-            let v : String = v.path.to_str().unwrap().to_owned();
-            yield v;
-            yield "\n".to_owned();
+
+            if !first{
+                yield ",\n".to_owned();
+            }else{
+                first = false;
+            }
+
+            let j = serde_json::to_string(&v).expect("json");
+            yield j;
         }
+        yield "\n]\n".to_owned();
     }
 }

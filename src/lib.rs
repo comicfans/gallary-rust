@@ -1,12 +1,16 @@
 pub mod common;
+#[cfg(feature = "delta")]
 pub mod delta;
 pub mod http;
+#[cfg(feature = "sqlite")]
 pub mod sqlite;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::{FsOpCallback, MyDirEntry, OrderBy, Store, StoreReader, walk_files};
+    use crate::common::{
+        BasicPicture, FsOpCallback, OrderBy, PictureRecord, Store, StoreReader, walk_files,
+    };
 
     use anyhow::Result;
     use function_name::named;
@@ -86,7 +90,7 @@ mod tests {
     }
 
     impl FsOpCallback for () {
-        fn on_op(&mut self, _path: MyDirEntry) -> Result<()> {
+        fn on_op(&mut self, _path: PictureRecord) -> Result<()> {
             Ok(())
         }
 
@@ -99,7 +103,8 @@ mod tests {
         walk_files(Path::new(&get_walk_dir()), &mut ()).expect("walk success");
     }
 
-    use crate::delta::SaveToDelta;
+    //use crate::delta::SaveToDelta;
+
     use crate::sqlite::SaveToSqlite;
     use counter::Counter;
 
@@ -107,8 +112,8 @@ mod tests {
         result: Counter<String>,
     }
     impl FsOpCallback for Checker {
-        fn on_op(&mut self, path: MyDirEntry) -> Result<()> {
-            self.result[&path.path.to_string_lossy().into_owned()] += 1;
+        fn on_op(&mut self, picture: PictureRecord) -> Result<()> {
+            self.result[&picture.path.to_owned()] += 1;
             Ok(())
         }
 
@@ -120,18 +125,18 @@ mod tests {
     fn test_write_read_compare(store: impl Store) {
         writer_benchmark(&mut store.writer());
         let mut reader = store.reader();
-        let mut checker = Checker {
-            result: Counter::<String>::new(),
-        };
-        reader
-            .load(OrderBy::FsModifyTime, 0, &mut checker)
-            .expect("read ok");
+        let mut checker = Counter::<String>::new();
+        let res = reader.load(OrderBy::FsModifyTime, 0).expect("read ok");
+        for v in res {
+            checker[&v.path] += 1;
+        }
         let expect = rand_path_generator().into_iter().collect::<Counter<_>>();
 
-        assert_eq!(checker.result, expect);
+        assert_eq!(checker, expect);
     }
     #[test]
     #[named]
+    #[cfg(feature = "delta")]
     fn test_deltalake_write_read_compare() {
         let deltalake = SaveToDelta::new(function_name!()).expect("ok");
         test_write_read_compare(deltalake);
@@ -146,6 +151,7 @@ mod tests {
 
     #[test]
     #[named]
+    #[cfg(feature = "delta")]
     fn test_write_delta() {
         let delta = SaveToDelta::new(function_name!().into()).expect("ok");
         walk_files(Path::new(&get_walk_dir()), &mut delta.writer()).expect("walk success");
@@ -165,7 +171,10 @@ mod tests {
     fn writer_benchmark(callback: &mut dyn FsOpCallback) {
         for path in rand_path_generator() {
             callback
-                .on_op(MyDirEntry { path: path.into() })
+                .on_op(PictureRecord {
+                    path: path.into(),
+                    fs_create_time: common::Zoned(jiff::Zoned::now()),
+                })
                 .expect("ok");
         }
         callback.flush().expect("flush ok");
@@ -181,16 +190,16 @@ mod tests {
 
     #[test]
     #[named]
+    #[cfg(feature = "delta")]
     fn test_deltalake_benchmark() {
         let delta = SaveToDelta::new(function_name!().into()).expect("ok");
         writer_benchmark(&mut delta.writer());
     }
 
-    fn do_read_10(save: &mut dyn StoreReader) {
-        let mut callback = ();
+    fn do_read_10(save: &mut impl StoreReader) {
         for _ in 0..10 {
-            save.load(OrderBy::FsCreateTime, 0, &mut callback)
-                .expect("read ok");
+            let it = save.load(OrderBy::FsCreateTime, 0).expect("read ok");
+            for _ in it {}
         }
     }
 
@@ -259,6 +268,7 @@ mod tests {
 
     #[named]
     #[test]
+    #[cfg(feature = "delta")]
     fn test_deltalake_rw_benchmark() {
         let save_to_delta = SaveToDelta::new(function_name!()).expect("deltalake create");
         multi_read_single_writer_benchmark(save_to_delta);
